@@ -40,13 +40,24 @@ export async function createServer(config: CreateServerConfig){
             }
 
             worker.send(JSON.stringify(payload))
+
+            worker.on('message',async (workerReply : string)=>{
+                const reply = await workerMessageReplySchema.parseAsync(JSON.parse(workerReply))
+                if(reply.statusCode == "404" || reply.statusCode == "500"){
+                    res.writeHead(parseInt(reply.statusCode))
+                    res.end(reply.error)
+                    return
+                }else{
+                    res.writeHead(200)
+                    res.end(reply.data)
+                }
+            })
         })
 
         server.listen(port, () => {
             console.log(`Server is up on port ${port}`)
         })
 
-        // console.log(Object.values(cluster.workers ?? []).length) -> to get the number of the workers node
     }else{
         console.log("Worker process is up")
         const config = await rootConfigSchema.parseAsync(JSON.parse(`${process.env.config}`))
@@ -61,12 +72,50 @@ export async function createServer(config: CreateServerConfig){
                 const reply : WorkerMessageReplyType = { error: `Rule not found!`, statusCode: '404'}
 
                 if(process.send) return process.send(JSON.stringify(reply))
-
             }
 
+            const upstreamID = rule?.upstreams[0]
 
+            if(!upstreamID){
+                const reply: WorkerMessageReplyType ={
+                    statusCode: "500",
+                    error: `UpstreamID not found`
+                }
+
+                if(process.send) return process.send(JSON.stringify(reply))
+            }
+
+            const upstream = config.server.upstreams.find(e=>e.id === upstreamID)
+
+            if(!upstream){
+                const reply: WorkerMessageReplyType ={
+                    statusCode: "500",
+                    error: `Upstream not found`
+                }
+
+                if(process.send) return process.send(JSON.stringify(reply))
+            }
+
+            const request = http.request({
+                host:upstream?.url,
+                path: requestURL,
+                method: 'GET'
+            },(proxyRes) => {
+                let body = ''
+                proxyRes.on('data',(chunk)=>{
+                    body += chunk
+                })
+
+                proxyRes.on('end',()=>{
+                    const reply: WorkerMessageReplyType = {
+                        data:body
+                    }
+
+                    if(process.send) return process.send(JSON.stringify(reply))
+                })
+            })
+
+            request.end()
         })
-
-
     }
 }

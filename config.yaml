@@ -4,24 +4,27 @@ server:
 
   upstreams:
     - id: node1
-      url: http://localhost:8001
-
+      url: https://jsonplaceholder.typicode.com
     - id: node2
       url: http://localhost:8002
 
   headers:
-    - key: x-forward-for
+    - key: x-forwarded-for
       value: '$ip'
-
     - key: Authorization
       value: 'Bearer xyz'
 
   rules:
-    - path: /
+    - path: "/admin"
+      match: "^/admin($|/.*)"  # Regex for `/admin` and any sub-path
       upstreams:
-        - node1,
         - node2
-
-    - path: /admin
+    - path: "/todos"
+      match: "^/todos($|/.*)"  # Regex for `/todos` and any sub-path
       upstreams:
+        - node1
+    - path: "/"
+      match: ".*"  # Matches any path
+      upstreams:
+        - node1
         - node2
